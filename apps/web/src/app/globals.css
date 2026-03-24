@@ -198,6 +198,7 @@ h1 {
 }
 
 .highlightCard,
+.mapCard,
 .storyCard,
 .sourceCard {
   padding: 24px;
@@ -211,6 +212,7 @@ h1 {
 }
 
 .highlightCard h2,
+.mapCard h2,
 .sectionHeader h2,
 .storyCard h2,
 .sourceCard h2 {
@@ -244,6 +246,17 @@ h1 {
   color: var(--ink-blue);
   font-weight: 700;
   text-decoration: none;
+}
+
+.projectTitleLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.projectTitleLink:hover,
+.projectLink:hover,
+.summaryLink:hover {
+  text-decoration: underline;
 }
 
 .controlPanel {
@@ -306,6 +319,21 @@ h1 {
   margin: 0 0 12px;
   font-size: clamp(2rem, 3vw, 3.2rem);
   line-height: 0.96;
+}
+
+.summaryLinks,
+.sourceLinks,
+.projectLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.summaryLink {
+  color: #f6f2ea;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .resultsGrid {
@@ -403,6 +431,125 @@ h1 {
   background: rgba(19, 53, 75, 0.08);
   color: var(--ink-blue);
   font-size: 0.9rem;
+  border: 0;
+  cursor: pointer;
+}
+
+.mapCard {
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, rgba(19, 53, 75, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 252, 246, 0.96), rgba(245, 237, 223, 0.92));
+  box-shadow: var(--shadow);
+}
+
+.mapCanvas {
+  position: relative;
+  overflow: hidden;
+  min-height: 320px;
+  margin-top: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(24, 21, 17, 0.08);
+  background:
+    linear-gradient(rgba(19, 53, 75, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(19, 53, 75, 0.06) 1px, transparent 1px),
+    linear-gradient(180deg, #f7f2e8, #efe3cf);
+  background-size: 36px 36px, 36px 36px, auto;
+}
+
+.mapRing {
+  position: absolute;
+  border-radius: 999px;
+  border: 1px dashed rgba(19, 53, 75, 0.16);
+}
+
+.ringOne {
+  inset: 38px 62px 82px 46px;
+}
+
+.ringTwo {
+  inset: 72px 110px 118px 94px;
+}
+
+.mapMarker {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  box-shadow: 0 12px 30px rgba(45, 35, 24, 0.14);
+}
+
+.mapMarker::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.routeOrigin {
+  top: 44%;
+  left: 42%;
+  color: #fff;
+  background: var(--ink-blue);
+}
+
+.projectMarker {
+  color: #fff;
+  background: var(--brand);
+}
+
+.marker1 {
+  top: 16%;
+  left: 16%;
+}
+
+.marker2 {
+  top: 28%;
+  right: 10%;
+}
+
+.marker3 {
+  bottom: 14%;
+  left: 20%;
+}
+
+.mapLine {
+  position: absolute;
+  height: 2px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(19, 53, 75, 0.85), rgba(204, 94, 49, 0.6));
+}
+
+.lineOne {
+  top: 47%;
+  left: 33%;
+  width: 120px;
+  transform: rotate(-28deg);
+}
+
+.lineTwo {
+  top: 45%;
+  left: 53%;
+  width: 122px;
+  transform: rotate(-12deg);
+}
+
+.lineThree {
+  top: 56%;
+  left: 36%;
+  width: 110px;
+  transform: rotate(40deg);
+}
+
+.mapCaption {
+  margin: 14px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .plainList {

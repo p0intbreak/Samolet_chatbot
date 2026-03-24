@@ -23,8 +23,16 @@ const projectCatalog: ProjectSummary[] = projects.map((project) => ({
   sourceName: 'novostroy.ru'
 }));
 
+const githubRepoUrl = 'https://github.com/p0intbreak/Samolet_chatbot';
+const publicDemoUrl = 'https://p0intbreak.github.io/Samolet_chatbot/';
+
 function isReady(project: Pick<ProjectSummary, 'completionStatus'>) {
   return project.completionStatus.toLowerCase().includes('сдан');
+}
+
+function getMapsLink(project: Pick<ProjectSummary, 'name' | 'address'>) {
+  const query = encodeURIComponent(`${project.name}, ${project.address}`);
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
 export function LandingClient() {
@@ -195,6 +203,14 @@ export function LandingClient() {
             Визуал сейчас тестирует product direction: поисковый ввод, project cards, фильтры
             статуса и срока ввода, а также explainable-подачу каталога.
           </p>
+          <div className="summaryLinks">
+            <a className="summaryLink" href={publicDemoUrl} target="_blank" rel="noreferrer">
+              Открыть публичную страницу
+            </a>
+            <a className="summaryLink" href={githubRepoUrl} target="_blank" rel="noreferrer">
+              Репозиторий проекта
+            </a>
+          </div>
         </div>
       </section>
 
@@ -211,7 +227,16 @@ export function LandingClient() {
                 <div className="projectTop">
                   <div>
                     <p className="projectCity">{project.city}</p>
-                    <h3>{project.name}</h3>
+                    <h3>
+                      <a
+                        className="projectTitleLink"
+                        href={project.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {project.name}
+                      </a>
+                    </h3>
                   </div>
                   <span className={isReady(project) ? 'statusBadge ready' : 'statusBadge building'}>
                     {project.completionStatus}
@@ -233,15 +258,25 @@ export function LandingClient() {
 
                 <div className="tagRow">
                   {project.locationTags.slice(0, 4).map((tag) => (
-                    <span className="miniTag" key={tag}>
+                    <button className="miniTag" key={tag} type="button" onClick={() => setQuery(tag)}>
                       {tag}
-                    </span>
+                    </button>
                   ))}
                 </div>
 
-                <a className="projectLink" href={project.sourceUrl} target="_blank" rel="noreferrer">
-                  Источник проекта
-                </a>
+                <div className="projectLinks">
+                  <a className="projectLink" href={project.sourceUrl} target="_blank" rel="noreferrer">
+                    Источник проекта
+                  </a>
+                  <a
+                    className="projectLink"
+                    href={getMapsLink(project)}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Открыть на карте
+                  </a>
+                </div>
               </article>
             ))}
 
@@ -255,6 +290,30 @@ export function LandingClient() {
         </div>
 
         <div className="insightColumn">
+          <article className="mapCard">
+            <p className="sectionLabel">Визуализация маршрута</p>
+            <h2>Карта сценария поиска</h2>
+            <div className="mapCanvas" aria-hidden="true">
+              <div className="mapRing ringOne" />
+              <div className="mapRing ringTwo" />
+              <div className="mapMarker routeOrigin">
+                <span>Вы</span>
+              </div>
+              {featuredProjects.slice(0, 3).map((project, index) => (
+                <div className={`mapMarker projectMarker marker${index + 1}`} key={project.id}>
+                  <span>{project.name}</span>
+                </div>
+              ))}
+              <div className="mapLine lineOne" />
+              <div className="mapLine lineTwo" />
+              <div className="mapLine lineThree" />
+            </div>
+            <p className="mapCaption">
+              Пока это MVP-визуализация: точка пользователя и рекомендованные направления. Следующим
+              шагом сюда можно подключить реальную карту и маршрутный движок.
+            </p>
+          </article>
+
           <article className="storyCard">
             <p className="sectionLabel">Как это читается</p>
             <h2>Лендинг уже показывает продуктовую рамку</h2>
@@ -274,6 +333,14 @@ export function LandingClient() {
               тестировать визуал, сценарии поиска и структуру выдачи до подключения нормального
               ingestion pipeline.
             </p>
+            <div className="sourceLinks">
+              <a className="projectLink" href="https://www.novostroy.ru/" target="_blank" rel="noreferrer">
+                Открыть Novostroy.ru
+              </a>
+              <a className="projectLink" href={githubRepoUrl} target="_blank" rel="noreferrer">
+                Смотреть код проекта
+              </a>
+            </div>
           </article>
         </div>
       </section>
