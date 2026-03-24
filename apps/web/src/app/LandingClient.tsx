@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { parseSearchQuery, searchProjects } from '@samolyot-finder/search-engine';
 import type { ProjectSearchResponse, ProjectSummary } from '@samolyot-finder/shared-types';
 import projects from '../../../../data/seeds/projects.moscow-mo.json';
@@ -22,6 +23,10 @@ const projectCatalog: ProjectSummary[] = projects.map((project) => ({
   ...project,
   sourceName: 'novostroy.ru'
 }));
+
+const RouteMap = dynamic(() => import('./RouteMap').then((module) => module.RouteMap), {
+  ssr: false
+});
 
 const githubRepoUrl = 'https://github.com/p0intbreak/Samolet_chatbot';
 const publicDemoUrl = 'https://p0intbreak.github.io/Samolet_chatbot/';
@@ -290,29 +295,7 @@ export function LandingClient() {
         </div>
 
         <div className="insightColumn">
-          <article className="mapCard">
-            <p className="sectionLabel">Визуализация маршрута</p>
-            <h2>Карта сценария поиска</h2>
-            <div className="mapCanvas" aria-hidden="true">
-              <div className="mapRing ringOne" />
-              <div className="mapRing ringTwo" />
-              <div className="mapMarker routeOrigin">
-                <span>Вы</span>
-              </div>
-              {featuredProjects.slice(0, 3).map((project, index) => (
-                <div className={`mapMarker projectMarker marker${index + 1}`} key={project.id}>
-                  <span>{project.name}</span>
-                </div>
-              ))}
-              <div className="mapLine lineOne" />
-              <div className="mapLine lineTwo" />
-              <div className="mapLine lineThree" />
-            </div>
-            <p className="mapCaption">
-              Пока это MVP-визуализация: точка пользователя и рекомендованные направления. Следующим
-              шагом сюда можно подключить реальную карту и маршрутный движок.
-            </p>
-          </article>
+          <RouteMap projects={featuredProjects} />
 
           <article className="storyCard">
             <p className="sectionLabel">Как это читается</p>
@@ -336,6 +319,9 @@ export function LandingClient() {
             <div className="sourceLinks">
               <a className="projectLink" href="https://www.novostroy.ru/" target="_blank" rel="noreferrer">
                 Открыть Novostroy.ru
+              </a>
+              <a className="projectLink" href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">
+                Карта OpenStreetMap
               </a>
               <a className="projectLink" href={githubRepoUrl} target="_blank" rel="noreferrer">
                 Смотреть код проекта

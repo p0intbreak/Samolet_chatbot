@@ -443,107 +443,55 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.mapCanvas {
+.realMapFrame {
   position: relative;
   overflow: hidden;
   min-height: 320px;
   margin-top: 16px;
   border-radius: 24px;
   border: 1px solid rgba(24, 21, 17, 0.08);
-  background:
-    linear-gradient(rgba(19, 53, 75, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(19, 53, 75, 0.06) 1px, transparent 1px),
-    linear-gradient(180deg, #f7f2e8, #efe3cf);
-  background-size: 36px 36px, 36px 36px, auto;
 }
 
-.mapRing {
+.realMapCanvas {
+  min-height: 320px;
+}
+
+.mapOverlay {
   position: absolute;
-  border-radius: 999px;
-  border: 1px dashed rgba(19, 53, 75, 0.16);
+  inset: 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  pointer-events: none;
+  color: var(--ink-blue);
+  font-size: 0.9rem;
+  font-weight: 700;
 }
 
-.ringOne {
-  inset: 38px 62px 82px 46px;
+.leaflet-project-icon,
+.leaflet-origin-icon {
+  background: transparent;
+  border: 0;
 }
 
-.ringTwo {
-  inset: 72px 110px 118px 94px;
-}
-
-.mapMarker {
-  position: absolute;
+.leaflet-project-icon span,
+.leaflet-origin-icon span {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
   border-radius: 999px;
-  font-size: 0.88rem;
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 0.84rem;
   font-weight: 700;
-  box-shadow: 0 12px 30px rgba(45, 35, 24, 0.14);
+  box-shadow: 0 12px 30px rgba(45, 35, 24, 0.16);
 }
 
-.mapMarker::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.routeOrigin {
-  top: 44%;
-  left: 42%;
-  color: #fff;
-  background: var(--ink-blue);
-}
-
-.projectMarker {
-  color: #fff;
+.leaflet-project-icon span {
   background: var(--brand);
 }
 
-.marker1 {
-  top: 16%;
-  left: 16%;
-}
-
-.marker2 {
-  top: 28%;
-  right: 10%;
-}
-
-.marker3 {
-  bottom: 14%;
-  left: 20%;
-}
-
-.mapLine {
-  position: absolute;
-  height: 2px;
-  transform-origin: left center;
-  background: linear-gradient(90deg, rgba(19, 53, 75, 0.85), rgba(204, 94, 49, 0.6));
-}
-
-.lineOne {
-  top: 47%;
-  left: 33%;
-  width: 120px;
-  transform: rotate(-28deg);
-}
-
-.lineTwo {
-  top: 45%;
-  left: 53%;
-  width: 122px;
-  transform: rotate(-12deg);
-}
-
-.lineThree {
-  top: 56%;
-  left: 36%;
-  width: 110px;
-  transform: rotate(40deg);
+.leaflet-origin-icon span {
+  background: var(--ink-blue);
 }
 
 .mapCaption {
