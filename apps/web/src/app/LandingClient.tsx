@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { parseSearchQuery, searchProjects } from '@samolyot-finder/search-engine';
+import type { ProjectSearchResponse, ProjectSummary } from '@samolyot-finder/shared-types';
 import projects from '../../../../data/seeds/projects.moscow-mo.json';
 
 const suggestions = [
@@ -10,74 +12,82 @@ const suggestions = [
   'Готовый проект рядом с Домодедово'
 ];
 
-const years = ['all', '2026', '2027', '2028'];
-const statusOptions = [
-  { id: 'all', label: 'Все статусы' },
-  { id: 'ready', label: 'Сданные' },
-  { id: 'building', label: 'Строящиеся' }
-] as const;
-
 const metrics = [
   { label: 'ЖК в каталоге', value: String(projects.length).padStart(2, '0') },
   { label: 'Локации МО и Москвы', value: '09+' },
   { label: 'Источник seed-каталога', value: '01' }
 ];
 
-type StatusFilter = (typeof statusOptions)[number]['id'];
+const projectCatalog: ProjectSummary[] = projects.map((project) => ({
+  ...project,
+  sourceName: 'novostroy.ru'
+}));
 
-function getProjectMatchScore(project: (typeof projects)[number], query: string) {
-  if (!query) {
-    return 0;
-  }
-
-  const lowerQuery = query.toLowerCase();
-  const haystack = [project.name, project.address, project.city, ...project.locationTags]
-    .join(' ')
-    .toLowerCase();
-
-  return lowerQuery
-    .split(/\s+/)
-    .filter(Boolean)
-    .reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0);
-}
-
-function isReady(project: (typeof projects)[number]) {
+function isReady(project: Pick<ProjectSummary, 'completionStatus'>) {
   return project.completionStatus.toLowerCase().includes('сдан');
 }
 
 export function LandingClient() {
   const [query, setQuery] = useState('Ищу строящийся ЖК 2026 рядом с Красногорском');
-  const [status, setStatus] = useState<StatusFilter>('all');
-  const [year, setYear] = useState('all');
+  const [searchResult, setSearchResult] = useState<ProjectSearchResponse>(() =>
+    searchProjects(projectCatalog, parseSearchQuery('Ищу строящийся ЖК 2026 рядом с Красногорском'))
+  );
+  const [isLoading, setIsLoading] = useState(false);
+  const featuredProjects = searchResult.projects.slice(0, 6);
+  const highlightProject = featuredProjects[0] ?? projectCatalog[0];
 
-  const rankedProjects = projects
-    .map((project) => ({
-      ...project,
-      matchScore: getProjectMatchScore(project, query)
-    }))
-    .filter((project) => {
-      if (status === 'ready' && !isReady(project)) {
-        return false;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function runSearch() {
+      setIsLoading(true);
+
+      const fallbackResult = searchProjects(projectCatalog, parseSearchQuery(query));
+      const apiBase = process.env.NEXT_PUBLIC_SEARCH_API_URL?.trim();
+
+      if (!apiBase) {
+        if (!cancelled) {
+          setSearchResult(fallbackResult);
+          setIsLoading(false);
+        }
+        return;
       }
 
-      if (status === 'building' && isReady(project)) {
-        return false;
+      try {
+        const response = await fetch(`${apiBase.replace(/\/$/, '')}/api/chat/message`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({ message: query })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = (await response.json()) as ProjectSearchResponse;
+
+        if (!cancelled) {
+          setSearchResult(payload);
+        }
+      } catch {
+        if (!cancelled) {
+          setSearchResult(fallbackResult);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
+    }
 
-      if (year !== 'all' && !project.completionPeriod.includes(year)) {
-        return false;
-      }
+    void runSearch();
 
-      if (!query.trim()) {
-        return true;
-      }
-
-      return project.matchScore > 0;
-    })
-    .sort((left, right) => right.matchScore - left.matchScore || left.name.localeCompare(right.name));
-
-  const featuredProjects = rankedProjects.slice(0, 6);
-  const highlightProject = featuredProjects[0] ?? projects[0];
+    return () => {
+      cancelled = true;
+    };
+  }, [query]);
 
   return (
     <main className="page">
@@ -152,35 +162,29 @@ export function LandingClient() {
       <section className="controlPanel">
         <div className="filters">
           <div className="filterGroup">
-            <span className="filterLabel">Статус</span>
+            <span className="filterLabel">Примененные фильтры</span>
             <div className="filterRow">
-              {statusOptions.map((option) => (
-                <button
-                  className={option.id === status ? 'filterPill active' : 'filterPill'}
-                  key={option.id}
-                  type="button"
-                  onClick={() => setStatus(option.id)}
-                >
-                  {option.label}
-                </button>
-              ))}
+              <span className="filterPill active">
+                {searchResult.appliedFilters.completionFilter === 'ready'
+                  ? 'Сданные'
+                  : searchResult.appliedFilters.completionFilter === 'building'
+                    ? 'Строящиеся'
+                    : 'Все статусы'}
+              </span>
+              <span className="filterPill active">
+                {searchResult.appliedFilters.completionYear ?? 'Любой год'}
+              </span>
+              <span className="filterPill active">
+                {searchResult.appliedFilters.detectedLocation ?? 'Без локации'}
+              </span>
             </div>
           </div>
 
           <div className="filterGroup">
-            <span className="filterLabel">Год ввода</span>
-            <div className="filterRow">
-              {years.map((option) => (
-                <button
-                  className={option === year ? 'filterPill active' : 'filterPill'}
-                  key={option}
-                  type="button"
-                  onClick={() => setYear(option)}
-                >
-                  {option === 'all' ? 'Любой' : option}
-                </button>
-              ))}
-            </div>
+            <span className="filterLabel">Ответ движка</span>
+            <p className="summaryText">
+              {isLoading ? 'Обновляю выдачу...' : searchResult.reply}
+            </p>
           </div>
         </div>
 
@@ -222,8 +226,8 @@ export function LandingClient() {
                     <span className="factValue">{project.completionPeriod}</span>
                   </div>
                   <div className="factBox">
-                    <span className="factLabel">Теги</span>
-                    <span className="factValue">{project.tags.join(' · ')}</span>
+                    <span className="factLabel">Почему в выдаче</span>
+                    <span className="factValue">{project.explanation}</span>
                   </div>
                 </div>
 
@@ -257,7 +261,7 @@ export function LandingClient() {
             <ul className="plainList">
               <li>Google-like поле запроса остается главным входом в продукт.</li>
               <li>Выдача строится по ЖК, а не по отдельным квартирам.</li>
-              <li>Фильтры статуса и срока ввода видны сразу, а не прячутся в чате.</li>
+              <li>На экране работает тот же search engine, что и в backend API.</li>
               <li>Карточка объясняет, почему проект попадает в подбор.</li>
             </ul>
           </article>
@@ -276,4 +280,3 @@ export function LandingClient() {
     </main>
   );
 }
-
