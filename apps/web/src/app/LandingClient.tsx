@@ -1,22 +1,40 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { parseSearchQuery, searchProjects } from '@samolyot-finder/search-engine';
 import type { ProjectSearchResponse, ProjectSummary } from '@samolyot-finder/shared-types';
 import projects from '../../../../data/seeds/projects.moscow-mo.json';
 
-const suggestions = [
-  'Сданный ЖК рядом с Одинцово',
-  'Строящийся проект 2026 рядом с Красногорском',
-  'Семейный ЖК в Новой Москве',
-  'Готовый проект рядом с Домодедово'
-];
+const RouteMap = dynamic(() => import('./RouteMap').then((module) => module.RouteMap), {
+  ssr: false
+});
 
-const metrics = [
-  { label: 'ЖК в каталоге', value: String(projects.length).padStart(2, '0') },
-  { label: 'Локации МО и Москвы', value: '09+' },
-  { label: 'Источник seed-каталога', value: '01' }
+const scenarios = [
+  {
+    id: 'office-west',
+    title: 'Работа на западе',
+    prompt: 'Ищу сданный ЖК рядом с Одинцово или Заречьем, чтобы удобно ездить на работу',
+    origin: 'Одинцово, Московская область'
+  },
+  {
+    id: 'family-new-moscow',
+    title: 'Семья в Новой Москве',
+    prompt: 'Ищу семейный ЖК в Новой Москве рядом с Остафьево или Алхимово',
+    origin: 'Остафьево, Москва'
+  },
+  {
+    id: 'commute-northwest',
+    title: 'Маршрут через северо-запад',
+    prompt: 'Ищу строящийся ЖК 2026 рядом с Красногорском',
+    origin: 'Красногорск, Московская область'
+  },
+  {
+    id: 'airport-south',
+    title: 'Направление Домодедово',
+    prompt: 'Нужен готовый проект рядом с Домодедово',
+    origin: 'Домодедово, Московская область'
+  }
 ];
 
 const projectCatalog: ProjectSummary[] = projects.map((project) => ({
@@ -24,15 +42,23 @@ const projectCatalog: ProjectSummary[] = projects.map((project) => ({
   sourceName: 'novostroy.ru'
 }));
 
-const RouteMap = dynamic(() => import('./RouteMap').then((module) => module.RouteMap), {
-  ssr: false
-});
+function inferOriginLabel(rawQuery: string, detectedLocation: string | null | undefined) {
+  const lower = rawQuery.toLowerCase();
 
-const githubRepoUrl = 'https://github.com/p0intbreak/Samolet_chatbot';
-const publicDemoUrl = 'https://p0intbreak.github.io/Samolet_chatbot/';
+  const hints = [
+    { tokens: ['одинцово', 'заречье', 'лайково'], label: 'Одинцово, Московская область' },
+    { tokens: ['красногорск', 'строгино', 'мякинино'], label: 'Красногорск, Московская область' },
+    { tokens: ['домодедово', 'мисайлово', 'коробово'], label: 'Домодедово, Московская область' },
+    { tokens: ['остафьево', 'алхимово', 'бутово'], label: 'Остафьево, Москва' },
+    { tokens: ['внуково', 'кокошкино'], label: 'Внуково, Москва' },
+    { tokens: ['мытищи'], label: 'Мытищи, Московская область' }
+  ];
 
-function isReady(project: Pick<ProjectSummary, 'completionStatus'>) {
-  return project.completionStatus.toLowerCase().includes('сдан');
+  const matched =
+    hints.find((hint) => hint.tokens.some((token) => lower.includes(token))) ||
+    hints.find((hint) => detectedLocation && hint.tokens.includes(detectedLocation.toLowerCase()));
+
+  return matched?.label ?? 'Москва, Россия';
 }
 
 function getMapsLink(project: Pick<ProjectSummary, 'name' | 'address'>) {
@@ -41,26 +67,44 @@ function getMapsLink(project: Pick<ProjectSummary, 'name' | 'address'>) {
 }
 
 export function LandingClient() {
-  const [query, setQuery] = useState('Ищу строящийся ЖК 2026 рядом с Красногорском');
-  const [searchResult, setSearchResult] = useState<ProjectSearchResponse>(() =>
-    searchProjects(projectCatalog, parseSearchQuery('Ищу строящийся ЖК 2026 рядом с Красногорском'))
-  );
+  const [draftQuery, setDraftQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<ProjectSearchResponse | null>(null);
+  const [originLabel, setOriginLabel] = useState('Москва, Россия');
   const [isLoading, setIsLoading] = useState(false);
-  const featuredProjects = searchResult.projects.slice(0, 6);
-  const highlightProject = featuredProjects[0] ?? projectCatalog[0];
+
+  const featuredProjects = searchResult?.projects.slice(0, 3) ?? [];
+  const hasSearched = Boolean(searchResult && submittedQuery);
+
+  const helperPrompt = useMemo(
+    () =>
+      hasSearched
+        ? 'Уточни район, срок ввода или жизненный сценарий, чтобы карта перестроила маршрут.'
+        : 'Опиши работу, учебу, район или направление, а я предложу сценарий поиска и покажу маршрут на карте.',
+    [hasSearched]
+  );
 
   useEffect(() => {
+    if (!submittedQuery) {
+      return;
+    }
+
     let cancelled = false;
 
     async function runSearch() {
       setIsLoading(true);
 
-      const fallbackResult = searchProjects(projectCatalog, parseSearchQuery(query));
+      const fallbackResult = searchProjects(projectCatalog, parseSearchQuery(submittedQuery));
+      const fallbackOrigin = inferOriginLabel(
+        submittedQuery,
+        fallbackResult.appliedFilters.detectedLocation ?? null
+      );
       const apiBase = process.env.NEXT_PUBLIC_SEARCH_API_URL?.trim();
 
       if (!apiBase) {
         if (!cancelled) {
           setSearchResult(fallbackResult);
+          setOriginLabel(fallbackOrigin);
           setIsLoading(false);
         }
         return;
@@ -72,7 +116,7 @@ export function LandingClient() {
           headers: {
             'content-type': 'application/json'
           },
-          body: JSON.stringify({ message: query })
+          body: JSON.stringify({ message: submittedQuery })
         });
 
         if (!response.ok) {
@@ -83,10 +127,14 @@ export function LandingClient() {
 
         if (!cancelled) {
           setSearchResult(payload);
+          setOriginLabel(
+            inferOriginLabel(submittedQuery, payload.appliedFilters.detectedLocation ?? null)
+          );
         }
       } catch {
         if (!cancelled) {
           setSearchResult(fallbackResult);
+          setOriginLabel(fallbackOrigin);
         }
       } finally {
         if (!cancelled) {
@@ -100,236 +148,184 @@ export function LandingClient() {
     return () => {
       cancelled = true;
     };
-  }, [query]);
+  }, [submittedQuery]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const normalized = draftQuery.trim();
+    if (!normalized) {
+      return;
+    }
+
+    setSubmittedQuery(normalized);
+  }
+
+  function applyScenario(prompt: string) {
+    setDraftQuery(prompt);
+    setSubmittedQuery(prompt);
+  }
 
   return (
     <main className="page">
-      <section className="heroPanel">
-        <div className="heroCopy">
-          <p className="eyebrow">Samolyot Finder / MVP landing</p>
-          <h1>Лендинг для подбора ЖК Самолета по сценарию жизни, району и сроку ввода</h1>
-          <p className="subtitle">
-            Это уже не статичный мок. Экран работает на реальном seed-каталоге ЖК Самолета по
-            Москве и Московской области и позволяет быстро проверить визуал, структуру выдачи и
-            базовую интерактивность.
-          </p>
+      <RouteMap
+        allProjects={projectCatalog}
+        featuredProjects={featuredProjects}
+        originLabel={originLabel}
+        hasSearched={hasSearched}
+      />
 
-          <div className="heroSearch">
-            <label className="searchLabel" htmlFor="landing-query">
-              Поисковый запрос
-            </label>
-            <div className="searchShell">
-              <input
-                id="landing-query"
-                aria-label="Поисковый запрос"
-                className="searchInput"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Например: сданный ЖК рядом с Одинцово"
-              />
-              <button className="searchButton" type="button">
-                Подобрать
-              </button>
+      <div className={hasSearched ? 'overlayStage shifted' : 'overlayStage centered'}>
+        <section className={hasSearched ? 'chatWindow resultMode' : 'chatWindow introMode'}>
+          <div className="chatHeader">
+            <div>
+              <p className="eyebrow">Samolyot Finder</p>
+              <h1>Подбор ЖК через чат и карту</h1>
+            </div>
+            <div className="chatHeaderBadge">
+              <span>{hasSearched ? 'Маршрут найден' : 'Сценарий ожидания'}</span>
             </div>
           </div>
 
-          <div className="chips">
-            {suggestions.map((item) => (
-              <button
-                className="chip"
-                key={item}
-                type="button"
-                onClick={() => setQuery(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        </div>
+          <div className="chatBody">
+            {!hasSearched ? (
+              <div className="introBlock">
+                <div className="messageBubble assistant">
+                  Опиши потребности как в диалоге: работа, район, метро, учеба, срок ввода. После
+                  ответа чат сдвинется вправо, а карта покажет маршрут к рекомендованным ЖК.
+                </div>
+                <p className="helperText">{helperPrompt}</p>
+              </div>
+            ) : (
+              <div className="conversationThread">
+                <div className="messageBubble user">{submittedQuery}</div>
+                <div className="messageBubble assistant">
+                  {isLoading
+                    ? 'Собираю рекомендации и перестраиваю маршрут...'
+                    : searchResult?.reply}
+                  {searchResult?.appliedFilters.detectedLocation ? (
+                    <span className="detectedMeta">
+                      {' '}
+                      Точка сценария: {searchResult.appliedFilters.detectedLocation}.
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
 
-        <aside className="heroAside">
-          <div className="metricsGrid">
-            {metrics.map((metric) => (
-              <article className="metricCard" key={metric.label}>
-                <span className="metricValue">{metric.value}</span>
-                <span className="metricLabel">{metric.label}</span>
-              </article>
-            ))}
-          </div>
+            <form className="chatComposer" onSubmit={handleSubmit}>
+              <div className="composerShell">
+                <input
+                  aria-label="Сообщение чат-боту"
+                  className="composerInput"
+                  value={draftQuery}
+                  onChange={(event) => setDraftQuery(event.target.value)}
+                  placeholder="Например: Ищу семейный ЖК в Новой Москве рядом с Остафьево"
+                />
+                <button className="composerButton" type="submit">
+                  {hasSearched ? 'Обновить' : 'Запустить'}
+                </button>
+              </div>
+            </form>
 
-          <article className="highlightCard">
-            <p className="sectionLabel">Сейчас в фокусе</p>
-            <h2>{highlightProject.name}</h2>
-            <p className="highlightMeta">
-              {highlightProject.city} · {highlightProject.completionStatus} ·{' '}
-              {highlightProject.completionPeriod}
-            </p>
-            <p className="highlightText">{highlightProject.address}</p>
-            <a className="projectLink" href={highlightProject.sourceUrl} target="_blank" rel="noreferrer">
-              Открыть карточку источника
-            </a>
-          </article>
-        </aside>
-      </section>
-
-      <section className="controlPanel">
-        <div className="filters">
-          <div className="filterGroup">
-            <span className="filterLabel">Примененные фильтры</span>
-            <div className="filterRow">
-              <span className="filterPill active">
-                {searchResult.appliedFilters.completionFilter === 'ready'
-                  ? 'Сданные'
-                  : searchResult.appliedFilters.completionFilter === 'building'
-                    ? 'Строящиеся'
-                    : 'Все статусы'}
-              </span>
-              <span className="filterPill active">
-                {searchResult.appliedFilters.completionYear ?? 'Любой год'}
-              </span>
-              <span className="filterPill active">
-                {searchResult.appliedFilters.detectedLocation ?? 'Без локации'}
-              </span>
+            <div className="scenarioRow">
+              {scenarios.map((scenario) => (
+                <button
+                  className="scenarioChip"
+                  key={scenario.id}
+                  type="button"
+                  onClick={() => applyScenario(scenario.prompt)}
+                >
+                  <span>{scenario.title}</span>
+                  <small>{scenario.origin}</small>
+                </button>
+              ))}
             </div>
-          </div>
 
-          <div className="filterGroup">
-            <span className="filterLabel">Ответ движка</span>
-            <p className="summaryText">
-              {isLoading ? 'Обновляю выдачу...' : searchResult.reply}
-            </p>
-          </div>
-        </div>
-
-        <div className="summaryPanel">
-          <p className="summaryLabel">Результат</p>
-          <p className="summaryValue">{featuredProjects.length} ЖК в текущей выдаче</p>
-          <p className="summaryText">
-            Визуал сейчас тестирует product direction: поисковый ввод, project cards, фильтры
-            статуса и срока ввода, а также explainable-подачу каталога.
-          </p>
-          <div className="summaryLinks">
-            <a className="summaryLink" href={publicDemoUrl} target="_blank" rel="noreferrer">
-              Открыть публичную страницу
-            </a>
-            <a className="summaryLink" href={githubRepoUrl} target="_blank" rel="noreferrer">
-              Репозиторий проекта
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <section className="resultsGrid">
-        <div className="resultsColumn">
-          <div className="sectionHeader">
-            <p className="sectionLabel">Выдача</p>
-            <h2>Подобранные ЖК</h2>
-          </div>
-
-          <div className="projectGrid">
-            {featuredProjects.map((project) => (
-              <article className="projectCard" key={project.id}>
-                <div className="projectTop">
+            {hasSearched ? (
+              <div className="resultsPanel">
+                <div className="resultsHeading">
                   <div>
-                    <p className="projectCity">{project.city}</p>
-                    <h3>
-                      <a
-                        className="projectTitleLink"
-                        href={project.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {project.name}
-                      </a>
-                    </h3>
+                    <p className="sectionLabel">Рекомендации</p>
+                    <h2>{featuredProjects.length} ЖК на текущем маршруте</h2>
                   </div>
-                  <span className={isReady(project) ? 'statusBadge ready' : 'statusBadge building'}>
-                    {project.completionStatus}
-                  </span>
-                </div>
-
-                <p className="projectAddress">{project.address}</p>
-
-                <div className="projectFacts">
-                  <div className="factBox">
-                    <span className="factLabel">Срок</span>
-                    <span className="factValue">{project.completionPeriod}</span>
-                  </div>
-                  <div className="factBox">
-                    <span className="factLabel">Почему в выдаче</span>
-                    <span className="factValue">{project.explanation}</span>
+                  <div className="routeSummary">
+                    <span>Откуда</span>
+                    <strong>{originLabel}</strong>
                   </div>
                 </div>
 
-                <div className="tagRow">
-                  {project.locationTags.slice(0, 4).map((tag) => (
-                    <button className="miniTag" key={tag} type="button" onClick={() => setQuery(tag)}>
-                      {tag}
-                    </button>
+                <div className="resultCards">
+                  {featuredProjects.map((project) => (
+                    <article className="resultCard" key={project.id}>
+                      <div className="resultCardTop">
+                        <div>
+                          <p className="projectCity">{project.city}</p>
+                          <h3>{project.name}</h3>
+                        </div>
+                        <span
+                          className={
+                            project.completionStatus.toLowerCase().includes('сдан')
+                              ? 'statusBadge ready'
+                              : 'statusBadge building'
+                          }
+                        >
+                          {project.completionStatus}
+                        </span>
+                      </div>
+
+                      <p className="projectAddress">{project.address}</p>
+                      <p className="resultExplanation">{project.explanation}</p>
+
+                      <div className="resultMeta">
+                        <span>{project.completionPeriod}</span>
+                        <span>{project.tags.join(' · ')}</span>
+                      </div>
+
+                      <div className="resultLinks">
+                        <a
+                          className="projectLink"
+                          href={project.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Карточка ЖК
+                        </a>
+                        <a
+                          className="projectLink"
+                          href={getMapsLink(project)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Открыть на карте
+                        </a>
+                      </div>
+                    </article>
                   ))}
                 </div>
-
-                <div className="projectLinks">
-                  <a className="projectLink" href={project.sourceUrl} target="_blank" rel="noreferrer">
-                    Источник проекта
-                  </a>
-                  <a
-                    className="projectLink"
-                    href={getMapsLink(project)}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Открыть на карте
-                  </a>
+              </div>
+            ) : (
+              <div className="emptyMapHint">
+                <p className="sectionLabel">Сценарии</p>
+                <div className="miniFacts">
+                  <div className="miniFact">
+                    <strong>{projectCatalog.length}</strong>
+                    <span>ЖК уже нанесены на карту</span>
+                  </div>
+                  <div className="miniFact">
+                    <strong>Маршрут</strong>
+                    <span>Появится после первого ответа чат-бота</span>
+                  </div>
+                  <div className="miniFact">
+                    <strong>Подсказки</strong>
+                    <span>Нажми на сценарий и начни с готового запроса</span>
+                  </div>
                 </div>
-              </article>
-            ))}
-
-            {featuredProjects.length === 0 ? (
-              <article className="emptyState">
-                <h3>Ничего не нашлось</h3>
-                <p>Попробуй убрать год ввода или заменить район на метро или направление.</p>
-              </article>
-            ) : null}
+              </div>
+            )}
           </div>
-        </div>
-
-        <div className="insightColumn">
-          <RouteMap projects={featuredProjects} />
-
-          <article className="storyCard">
-            <p className="sectionLabel">Как это читается</p>
-            <h2>Лендинг уже показывает продуктовую рамку</h2>
-            <ul className="plainList">
-              <li>Google-like поле запроса остается главным входом в продукт.</li>
-              <li>Выдача строится по ЖК, а не по отдельным квартирам.</li>
-              <li>На экране работает тот же search engine, что и в backend API.</li>
-              <li>Карточка объясняет, почему проект попадает в подбор.</li>
-            </ul>
-          </article>
-
-          <article className="sourceCard">
-            <p className="sectionLabel">Источник seed-каталога</p>
-            <h2>Novostroy.ru как временный data source</h2>
-            <p>
-              На текущем этапе лендинг использует curated seed для Москвы и МО. Это позволяет
-              тестировать визуал, сценарии поиска и структуру выдачи до подключения нормального
-              ingestion pipeline.
-            </p>
-            <div className="sourceLinks">
-              <a className="projectLink" href="https://www.novostroy.ru/" target="_blank" rel="noreferrer">
-                Открыть Novostroy.ru
-              </a>
-              <a className="projectLink" href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">
-                Карта OpenStreetMap
-              </a>
-              <a className="projectLink" href={githubRepoUrl} target="_blank" rel="noreferrer">
-                Смотреть код проекта
-              </a>
-            </div>
-          </article>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }
