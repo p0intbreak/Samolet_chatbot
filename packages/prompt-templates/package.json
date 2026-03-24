@@ -1,0 +1,8 @@
+{
+  "name": "@samolyot-finder/prompt-templates",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "typecheck": "node -e \"process.exit(0)\""
+  }
+}
