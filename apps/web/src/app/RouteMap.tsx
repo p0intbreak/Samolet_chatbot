@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import type { ProjectSummary, RankedProject } from '@samolyot-finder/shared-types';
+
+type MapGlModule = typeof import('@2gis/mapgl');
 
 type RouteMapProps = {
   allProjects: ProjectSummary[];
@@ -19,17 +19,8 @@ type MapPoint = {
   lng: number;
 };
 
-const MOSCOW_CENTER: [number, number] = [55.751244, 37.618423];
+const MOSCOW_CENTER: [number, number] = [37.618423, 55.751244];
 const geocodeCache = new Map<string, MapPoint>();
-
-function createProjectIcon(label: string, kind: 'ghost' | 'active' | 'origin') {
-  return L.divIcon({
-    className: `leaflet-project-icon ${kind}`,
-    html: `<span>${label}</span>`,
-    iconSize: kind === 'ghost' ? [18, 18] : kind === 'origin' ? [84, 38] : [152, 40],
-    iconAnchor: kind === 'ghost' ? [9, 9] : kind === 'origin' ? [42, 19] : [76, 20]
-  });
-}
 
 async function geocodeLocation(query: string, fallbackId: string) {
   if (geocodeCache.has(query)) {
@@ -75,11 +66,15 @@ export function RouteMap({
   hasSearched
 }: RouteMapProps) {
   const mapRef = useRef<HTMLDivElement | null>(null);
-  const leafletMapRef = useRef<L.Map | null>(null);
-  const layerGroupRef = useRef<L.LayerGroup | null>(null);
+  const mapGlRef = useRef<Awaited<ReturnType<MapGlModule['load']>> | null>(null);
+  const mapInstanceRef = useRef<InstanceType<Awaited<ReturnType<MapGlModule['load']>>['Map']> | null>(
+    null
+  );
+  const mapObjectsRef = useRef<Array<{ destroy: () => void }>>([]);
   const [allPoints, setAllPoints] = useState<MapPoint[]>([]);
   const [originPoint, setOriginPoint] = useState<MapPoint | null>(null);
   const [isResolving, setIsResolving] = useState(true);
+  const [mapProvider, setMapProvider] = useState<'2gis' | 'fallback'>('fallback');
 
   const activeProjectIds = useMemo(
     () => new Set(featuredProjects.slice(0, 3).map((project) => project.id)),
@@ -144,8 +139,8 @@ export function RouteMap({
           setOriginPoint({
             id: 'origin:fallback',
             name: originLabel,
-            lat: MOSCOW_CENTER[0],
-            lng: MOSCOW_CENTER[1]
+            lat: MOSCOW_CENTER[1],
+            lng: MOSCOW_CENTER[0]
           });
         }
       }
@@ -159,95 +154,153 @@ export function RouteMap({
   }, [originLabel, hasSearched]);
 
   useEffect(() => {
-    if (!mapRef.current || leafletMapRef.current) {
+    if (!mapRef.current || mapInstanceRef.current) {
       return;
     }
 
-    const map = L.map(mapRef.current, {
-      zoomControl: false,
-      scrollWheelZoom: true
-    }).setView(MOSCOW_CENTER, 10);
+    let disposed = false;
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    async function initializeMap() {
+      const key = process.env.NEXT_PUBLIC_2GIS_KEY?.trim();
 
-    const layers = L.layerGroup().addTo(map);
+      if (!key) {
+        setMapProvider('fallback');
+        return;
+      }
 
-    leafletMapRef.current = map;
-    layerGroupRef.current = layers;
+      try {
+        const mapglModule = await import('@2gis/mapgl');
+        const mapgl = await mapglModule.load();
+
+        if (disposed || !mapRef.current) {
+          return;
+        }
+
+        const map = new mapgl.Map(mapRef.current, {
+          center: MOSCOW_CENTER,
+          zoom: 10,
+          key,
+          style: 'c080bb6a-8134-4993-93a1-5b4d8c36a59b'
+        });
+
+        mapGlRef.current = mapgl;
+        mapInstanceRef.current = map;
+        setMapProvider('2gis');
+      } catch {
+        setMapProvider('fallback');
+      }
+    }
+
+    void initializeMap();
 
     return () => {
-      map.remove();
-      leafletMapRef.current = null;
-      layerGroupRef.current = null;
+      disposed = true;
+      mapObjectsRef.current.forEach((item) => item.destroy());
+      mapObjectsRef.current = [];
+      mapInstanceRef.current?.destroy();
+      mapInstanceRef.current = null;
+      mapGlRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const map = leafletMapRef.current;
-    const layers = layerGroupRef.current;
+    const map = mapInstanceRef.current;
+    const mapgl = mapGlRef.current;
 
-    if (!map || !layers) {
+    if (!map || !mapgl) {
       return;
     }
 
-    layers.clearLayers();
+    mapObjectsRef.current.forEach((item) => item.destroy());
+    mapObjectsRef.current = [];
 
-    const boundsPoints: L.LatLngExpression[] = [];
+    const boundsPoints: Array<[number, number]> = [];
 
     allPoints.forEach((point) => {
-      const latLng: L.LatLngExpression = [point.lat, point.lng];
       const isActive = activeProjectIds.has(point.id);
-      boundsPoints.push(latLng);
+      boundsPoints.push([point.lng, point.lat]);
 
-      L.marker(latLng, {
-        icon: createProjectIcon(
-          isActive ? point.name : '',
-          isActive ? 'active' : 'ghost'
-        )
-      })
-        .bindPopup(point.name)
-        .addTo(layers);
+      const marker = new mapgl.Marker(map, {
+        coordinates: [point.lng, point.lat],
+        icon: isActive ? 'https://docs.2gis.com/img/mapgl/marker.svg' : undefined,
+        size: isActive ? [40, 40] : undefined,
+        label: isActive
+          ? {
+              text: point.name,
+              color: '#ffffff',
+              fontSize: 13,
+              haloColor: '#c35a31',
+              haloRadius: 10
+            }
+          : undefined
+      });
+
+      mapObjectsRef.current.push(marker);
     });
 
     if (hasSearched && originPoint) {
-      const originLatLng: L.LatLngExpression = [originPoint.lat, originPoint.lng];
-      boundsPoints.push(originLatLng);
+      boundsPoints.push([originPoint.lng, originPoint.lat]);
 
-      L.marker(originLatLng, {
-        icon: createProjectIcon(originPoint.name, 'origin')
-      })
-        .bindPopup(originPoint.name)
-        .addTo(layers);
+      const originMarker = new mapgl.Marker(map, {
+        coordinates: [originPoint.lng, originPoint.lat],
+        icon: 'https://docs.2gis.com/img/mapgl/marker.svg',
+        size: [46, 46],
+        label: {
+          text: originPoint.name,
+          color: '#ffffff',
+          fontSize: 13,
+          haloColor: '#153549',
+          haloRadius: 10
+        }
+      });
+
+      mapObjectsRef.current.push(originMarker);
 
       allPoints
         .filter((point) => activeProjectIds.has(point.id))
         .forEach((point) => {
-          const latLng: L.LatLngExpression = [point.lat, point.lng];
+          const polyline = new mapgl.Polyline(map, {
+            coordinates: [
+              [originPoint.lng, originPoint.lat],
+              [point.lng, point.lat]
+            ],
+            width: 4,
+            color: '#c35a31'
+          });
 
-          L.polyline([originLatLng, latLng], {
-            color: '#cc5e31',
-            weight: 3,
-            opacity: 0.85,
-            dashArray: '10 10'
-          }).addTo(layers);
+          mapObjectsRef.current.push(polyline);
         });
     }
 
     if (hasSearched && originPoint) {
-      map.fitBounds(L.latLngBounds(boundsPoints), {
-        padding: [120, 120]
-      });
-    } else if (allPoints.length > 0) {
+      const lngs = boundsPoints.map((point) => point[0]);
+      const lats = boundsPoints.map((point) => point[1]);
+
       map.fitBounds(
-        L.latLngBounds(allPoints.map((point) => [point.lat, point.lng] as L.LatLngExpression)),
         {
-          padding: [80, 80]
+          northEast: [Math.max(...lngs), Math.max(...lats)],
+          southWest: [Math.min(...lngs), Math.min(...lats)]
+        },
+        {
+          padding: { top: 120, bottom: 120, left: 120, right: 120 }
+        }
+      );
+    } else if (allPoints.length > 0) {
+      const lngs = allPoints.map((point) => point.lng);
+      const lats = allPoints.map((point) => point.lat);
+
+      map.fitBounds(
+        {
+          northEast: [Math.max(...lngs), Math.max(...lats)],
+          southWest: [Math.min(...lngs), Math.min(...lats)]
+        },
+        {
+          padding: { top: 80, bottom: 80, left: 80, right: 80 }
         }
       );
     } else {
-      map.setView(MOSCOW_CENTER, 10);
+      map.setCenter(MOSCOW_CENTER);
+      map.setZoom(10);
     }
   }, [activeProjectIds, allPoints, hasSearched, originPoint]);
 
@@ -263,6 +316,11 @@ export function RouteMap({
             : hasSearched
               ? `Маршруты от "${originLabel}" к рекомендованным ЖК`
               : 'Все объекты Самолета нанесены на карту'}
+        </div>
+        <div className="mapProviderBadge">
+          {mapProvider === '2gis'
+            ? 'Карта: 2GIS'
+            : 'Карта: fallback mode, добавь NEXT_PUBLIC_2GIS_KEY'}
         </div>
       </div>
     </div>

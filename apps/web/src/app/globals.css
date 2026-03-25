@@ -89,7 +89,8 @@ button {
 }
 
 .mapBadge,
-.mapStatus {
+.mapStatus,
+.mapProviderBadge {
   width: fit-content;
   padding: 10px 14px;
   border-radius: 999px;
